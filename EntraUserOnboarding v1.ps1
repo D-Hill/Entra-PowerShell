@@ -112,6 +112,39 @@ function Confirm-Headers {
     $headersValidated
 }
 
+function Get-GroupAssignments {
+
+
+    param (
+        [Parameter(Mandatory)]
+        [object]$user
+    )
+
+    $groupsToAdd = @()
+
+    # All Users
+    $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-All Users'"
+
+    # Offices
+    If ($user.office -like 'London') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-London Office'" }
+    If ($user.office -like 'Manchester') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Manchester Office'" }
+    If ($user.office -like 'Edinburgh') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Edinburgh Office'" }
+    If ($user.office -like 'Birmingham') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Birmingham Office'" }
+
+    # Departments
+    If ($user.Department -like 'Finance') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Finance'" }
+    If ($user.Department -like 'Information Technology') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Information Technology'" }
+    If ($user.Department -like 'HR') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Human Resources'" }
+    If ($user.Department -like 'Executive') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Executive'" }
+
+    # titles
+    If ($user.jobtitle -like 'IT Support Analyst') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'IT Support Hub'" }
+
+
+    return $groupsToAdd
+
+}
+
 $dir = "C:\NewUsers"
 
 $logFile = "$dir\Log\UsersCreated.csv"
@@ -123,10 +156,12 @@ $importFile = Get-ChildItem -Path "$dir\Import" -Filter *.csv
 
 If ($importFile.count -gt 1) { write-warning "More than one file in the Import folder - Please ensure only one file is present and try again" }
 
+write-host "`n *** Starting User Provisioninfg Script ***" -ForegroundColor cyan
+
 # validate headers
-if (Confirm-Headers -file $dir\import\$importFile) { Write-host "Checked headers of input file - All OK" -ForegroundColor green }
+if (Confirm-Headers -file $dir\import\$importFile) { Write-host "`n - Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | select -first 5
+$users = Import-Csv $dir\import\$importFile | select -first 18
 
 #trim all entries
 foreach ($user in $users) {
@@ -137,19 +172,25 @@ foreach ($user in $users) {
     }
 }
 
-read-host "$(($users | measure-object).count) users found in the input file. Any key to continue"
+write-host " -  $(($users | measure-object).count) users found in the input file" -ForegroundColor green
 
 # main execution
+
+$i = 0
 foreach ($user in $users) {
-    read-host "`Any key to continue to next user - $($user.userprincipalname)"
+
+    $i++
+
+    Write-host "`nProcessing row $i of $($users.count) - $($user.UserPrincipalName)" -foregroundcolor cyan
+  #  read-host "`Any key to continue"
 
     $existingUser = $null
     $existingUser = Get-MgUser -UserId $user.UserPrincipalName -ErrorAction SilentlyContinue
-    if ($existingUser) { write-warning "User $($existingUser.DisplayName) already exists in the tenant. Skipping to next user in input file" ; continue }
+    if ($existingUser) { Write-host "User $($existingUser.DisplayName) already exists in the tenant with the same UPN. This user will be skipped" -foregroundcolor yellow; continue }
 
     if (-not $existingUser) {
 
-        write-host "Creating $($user.UserPrincipalName)"
+        write-host "Creating new user $($user.UserPrincipalName)" -ForegroundColor green
         try {
             $mailNickname = $null
             $mailNickname = $user.UserPrincipalName.Split("@")[0]
@@ -166,9 +207,30 @@ foreach ($user in $users) {
                 Office            = $user.Office
             }
 
-            New-User @NewUserParams -ErrorAction Stop
-            Write-Host "Successfully created $($user.UserPrincipalName)" -ForegroundColor Green
+            $newUser = $null
+            $newUser = New-User @NewUserParams -ErrorAction Stop 
+          
+        }
+        catch {
+            Write-Warning "Failed to create $($user.UserPrincipalName)"
+            Write-Warning $_.Exception.Message
+        }
 
+        if ($newUser) { 
+            write-host "`n - User $($newUser.DisplayName) created successfully" -ForegroundColor green
+
+            Write-host "`n - Adding security groups" -ForegroundColor Cyan
+            $groupsToAdd = Get-GroupAssignments -user $user
+
+            foreach ($group in $groupsToAdd) {
+
+                write-host " -- Adding $($newUser.DisplayName) to group $($group.DisplayName)" -ForegroundColor cyan
+                New-MgGroupMember -GroupId $group.Id  -DirectoryObjectId $newUser.Id 
+            
+            }
+
+            write-host "`n - Adding log file entry for $($user.DisplayName)" -ForegroundColor blue
+       
             $LogEntry = [PSCustomObject]@{
         
                 DisplayName              = $user.DisplayName
@@ -177,21 +239,19 @@ foreach ($user in $users) {
                 Department               = $user.Department
                 Office                   = $user.Office
                 ManagerUserPrincipalName = $user.ManagerUserPrincipalName
-                CreatedBy                = $env:USERNAME
+                GroupsAdded              = $groupsToAdd.displayname -join ';'
+                CreatedBy                = (Get-MgContext).Account
                 CreatedDate              = Get-Date -Format dd-MM-yyyy-HH:mm
                 Status                   = "Created"
             }
 
             $LogEntry | Export-Csv -Path $LogFile -NoTypeInformation -Append
-
-        }
-        catch {
-            Write-Warning "Failed to create $($user.UserPrincipalName)"
-            Write-Warning $_.Exception.Message
+       
         }
 
     }
-
-  
+    
 }
+
+
 
