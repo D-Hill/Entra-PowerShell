@@ -68,7 +68,7 @@ function Confirm-Headers {
         'GivenName',
         'Surname',
         'UserPrincipalName',
-      #  'MailNickname',
+        #  'MailNickname',
         'JobTitle',
         'Department',
         'Office',
@@ -101,28 +101,28 @@ function Confirm-CsvEntries {
         [string]$File
     )
 
-    $requiredFields =  @(
+    $requiredFields = @(
         'DisplayName',
         'GivenName',
         'Surname',
         'UserPrincipalName',
-      #  'MailNickname',
+        #  'MailNickname',
         'JobTitle',
         'Department',
         'Office',
-        'ManagerUserPrincipalName',
+        #     'ManagerUserPrincipalName',
         'Password'
     )
 
     $users = Import-Csv $File
     $errors = @()
- $i = 0
+    $row = 1
     foreach ($user in $users) {
-$i++
+        $row++
         foreach ($field in $requiredFields) {
 
             if ([string]::IsNullOrWhiteSpace($user.$field)) {
-                $errors += "Missing $field in row $i"
+                $errors += " -- Checked content of input file.  $field is missing in row $row. $field is a madatory field. Please update and retry." 
             }
 
         }
@@ -130,24 +130,24 @@ $i++
         if ($user.UserPrincipalName -and 
             $user.UserPrincipalName -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
 
-            $errors += "Invalid UPN format: $($user.UserPrincipalName)"
+            $errors += " -- Invalid UPN format in row $row - $($user.UserPrincipalName). Please update and retry."
         }
     }
 
     if ($errors.Count -gt 0) {
 
-        Write-Warning "- CSV validation failed:"
+        #  Write-Warning "- CSV validation failed:"
 
         foreach ($error in $errors) {
-            Write-Warning " -- $error"
+            Write-host "$error" -foregroundcolor red
         }
 
         return $false
-
+     
     }
     else {
 
-        Write-Host " --- CSV entries validated successfully" -ForegroundColor Green
+        #   Write-Host " --- CSV entries validated successfully" -ForegroundColor Green
         return $true
 
     }
@@ -214,13 +214,18 @@ If ($importFile.count -gt 1) { write-warning " -- More than one file in the Impo
 # validate headers
 if (Confirm-Headers -file $dir\import\$importFile) { Write-host " -- Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | Select-Object -first 25
-write-host " -- $(($users | measure-object).count) users found in the input file" -ForegroundColor green
-write-host ' -- trimming CSV entries' -ForegroundColor Green
+$users = Import-Csv $dir\import\$importFile | Select-Object -first 15
 
-if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green }
+# validate contents
+
+if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green } else { exit }
+
+
+
+write-host " -- $(($users | measure-object).count) users found in the input file" -ForegroundColor green
 
 #trim all entries
+write-host ' -- trimming CSV entries' -ForegroundColor Green
 foreach ($user in $users) {
     foreach ($property in $user.PSObject.Properties) {
         if ($property.Value -is [string]) {
@@ -233,7 +238,7 @@ $logFile = "$dir\Log\UsersCreated.csv"
 if ((test-path $logFile)) { write-host ' -- Log file found' -ForegroundColor Green }
 if (!(test-path $logFile)) { write-warning ' -- No log file found - Please ensure the log file is in the directory - $($logfile)' ; exit }
 
-read-host "`nRun onboarding script?"
+read-host "`nRun onboarding script? any key to continue"
 
 
 # main execution
