@@ -161,7 +161,7 @@ write-host "`n *** Starting User Provisioninfg Script ***" -ForegroundColor cyan
 # validate headers
 if (Confirm-Headers -file $dir\import\$importFile) { Write-host "`n - Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | select -first 18
+$users = Import-Csv $dir\import\$importFile | Select-Object -first 18
 
 #trim all entries
 foreach ($user in $users) {
