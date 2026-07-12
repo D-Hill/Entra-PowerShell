@@ -4,31 +4,19 @@ function New-User {
     param (
         [Parameter(Mandatory)]
         [string]$DisplayName,
-
         [Parameter(Mandatory)]
         [string]$UserPrincipalName,
-
         [Parameter(Mandatory)]
         [string]$MailNickname,
-
         [string]$GivenName,
-
         [string]$Surname,
-
         [string]$Password,
-
         [bool]$ForceChangePasswordNextSignIn = $true,
-
         [bool]$AccountEnabled = $true,
-
         [string]$UsageLocation = "GB",
-
         [string]$Department,
-
         [string]$JobTitle,
-
         [string]$Office,
-
         [string[]]$GroupIds
     )
 
@@ -37,8 +25,7 @@ function New-User {
     }
 
     process {
-        # TODO: generate password if not supplied
-
+    
         $passwordProfile = @{
             Password                      = $Password
             ForceChangePasswordNextSignIn = $ForceChangePasswordNextSignIn
@@ -61,10 +48,6 @@ function New-User {
 
         if ($PSCmdlet.ShouldProcess($UserPrincipalName, "Create new Entra ID user")) {
             New-MgUser @userParams
-
-            # TODO: optionally add to groups via $GroupIds (New-MgGroupMember)
-
-            # TODO: output created user object
         }
     }
 
@@ -85,7 +68,7 @@ function Confirm-Headers {
         'GivenName',
         'Surname',
         'UserPrincipalName',
-        'MailNickname',
+      #  'MailNickname',
         'JobTitle',
         'Department',
         'Office',
@@ -97,11 +80,11 @@ function Confirm-Headers {
     $extra = $csvHeaders | Where-Object { $_ -notin $expectedHeaders }
 
     if ($missing -or $extra) {
-        Write-Warning "Header mismatch in $($file.Name):"
-        if ($missing) { Write-Warning "  Missing: $($missing -join ', ') - Please correct input file and try again" }
-        if ($extra) { Write-Warning "  Unexpected: $($extra -join ', ') - Please remove or correct this header as it is not configured in script" }
+
+        if ($missing) { Write-Warning " - Missing header in input file: $($missing -join ', ') - Please correct input file and try again" }
+        if ($extra) { Write-Warning " - Unexpected header in input file: $($extra -join ', ') - Please remove or correct this header as it is not configured in script" }
         $headersValidated = $false
-        break
+        exit
 
     }
     else {
@@ -111,7 +94,64 @@ function Confirm-Headers {
 
     $headersValidated
 }
+function Confirm-CsvEntries {
 
+    param (
+        [Parameter(Mandatory)]
+        [string]$File
+    )
+
+    $requiredFields =  @(
+        'DisplayName',
+        'GivenName',
+        'Surname',
+        'UserPrincipalName',
+      #  'MailNickname',
+        'JobTitle',
+        'Department',
+        'Office',
+        'ManagerUserPrincipalName',
+        'Password'
+    )
+
+    $users = Import-Csv $File
+    $errors = @()
+ $i = 0
+    foreach ($user in $users) {
+$i++
+        foreach ($field in $requiredFields) {
+
+            if ([string]::IsNullOrWhiteSpace($user.$field)) {
+                $errors += "Missing $field in row $i"
+            }
+
+        }
+        # Validate UPN format
+        if ($user.UserPrincipalName -and 
+            $user.UserPrincipalName -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+
+            $errors += "Invalid UPN format: $($user.UserPrincipalName)"
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+
+        Write-Warning "- CSV validation failed:"
+
+        foreach ($error in $errors) {
+            Write-Warning " -- $error"
+        }
+
+        return $false
+
+    }
+    else {
+
+        Write-Host " --- CSV entries validated successfully" -ForegroundColor Green
+        return $true
+
+    }
+}
 function Get-GroupAssignments {
 
 
@@ -147,21 +187,38 @@ function Get-GroupAssignments {
 
 $dir = "C:\NewUsers"
 
-$logFile = "$dir\Log\UsersCreated.csv"
-if (!(test-path $logFile)) { write-warning 'No log file found - Please ensure the log file is in the directory - $($logfile)' ; break }
+write-host "`n *** Starting Onboarding Script ***" -ForegroundColor green
+
+# Check Microsoft Graph connection
+$GraphContext = Get-MgContext
+
+write-host "`n - Checking connection to Microsoft Graph" -ForegroundColor Cyan
+
+if (-not $GraphContext) {
+    Write-Host " -- Connecting to Microsoft Graph with User write permissions" -ForegroundColor Yellow
+
+    # connects to graph and discards message for console readability
+    $graphConnectionMessage = Connect-MgGraph -Scopes "User.ReadWrite.All", "Group.ReadWrite.All" 
+    if ( Get-MgContext ) { Write-Host " --- Connection to Microsoft Graph successful" -ForegroundColor Green } else { Write-warning " --- Connection to Microsoft Graph failed" ; exit }
+}
+else {
+    Write-Host " -- Existing Microsoft Graph session found for $($GraphContext.Account)" -ForegroundColor Green
+}
+
+write-host "`n - Checking input and log file" -ForegroundColor Cyan
 
 # checks import files
-Write-host "Checking import file and verifying headers"
 $importFile = Get-ChildItem -Path "$dir\Import" -Filter *.csv 
-
-If ($importFile.count -gt 1) { write-warning "More than one file in the Import folder - Please ensure only one file is present and try again" }
-
-write-host "`n *** Starting User Provisioninfg Script ***" -ForegroundColor cyan
+If ($importFile.count -gt 1) { write-warning " -- More than one file in the Import folder - Please ensure only one file is present and try again" ; exit }
 
 # validate headers
-if (Confirm-Headers -file $dir\import\$importFile) { Write-host "`n - Checked headers of input file - All OK" -ForegroundColor green }
+if (Confirm-Headers -file $dir\import\$importFile) { Write-host " -- Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | Select-Object -first 18
+$users = Import-Csv $dir\import\$importFile | Select-Object -first 25
+write-host " -- $(($users | measure-object).count) users found in the input file" -ForegroundColor green
+write-host ' -- trimming CSV entries' -ForegroundColor Green
+
+if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green }
 
 #trim all entries
 foreach ($user in $users) {
@@ -171,26 +228,32 @@ foreach ($user in $users) {
         }
     }
 }
+# checks logfile exists
+$logFile = "$dir\Log\UsersCreated.csv"
+if ((test-path $logFile)) { write-host ' -- Log file found' -ForegroundColor Green }
+if (!(test-path $logFile)) { write-warning ' -- No log file found - Please ensure the log file is in the directory - $($logfile)' ; exit }
 
-write-host " -  $(($users | measure-object).count) users found in the input file" -ForegroundColor green
+read-host "`nRun onboarding script?"
+
 
 # main execution
-
 $i = 0
 foreach ($user in $users) {
 
+    # counter goes up by 1
     $i++
 
     Write-host "`nProcessing row $i of $($users.count) - $($user.UserPrincipalName)" -foregroundcolor cyan
-  #  read-host "`Any key to continue"
 
+    # checks for existing user by UPN
     $existingUser = $null
     $existingUser = Get-MgUser -UserId $user.UserPrincipalName -ErrorAction SilentlyContinue
-    if ($existingUser) { Write-host "User $($existingUser.DisplayName) already exists in the tenant with the same UPN. This user will be skipped" -foregroundcolor yellow; continue }
+    if ($existingUser) { Write-host " - User $($existingUser.UserPrincipalName) already exists in the tenant. This user will be skipped" -foregroundcolor yellow; continue }
 
+    # if no user exists with that UPN create user
     if (-not $existingUser) {
 
-        write-host "Creating new user $($user.UserPrincipalName)" -ForegroundColor green
+        write-host " - Creating new user $($user.UserPrincipalName)" -ForegroundColor yello
         try {
             $mailNickname = $null
             $mailNickname = $user.UserPrincipalName.Split("@")[0]
@@ -206,29 +269,30 @@ foreach ($user in $users) {
                 JobTitle          = $user.JobTitle
                 Office            = $user.Office
             }
-
+            # calls New-User function
             $newUser = $null
             $newUser = New-User @NewUserParams -ErrorAction Stop 
-          
         }
         catch {
-            Write-Warning "Failed to create $($user.UserPrincipalName)"
-            Write-Warning $_.Exception.Message
+            Write-Warning " - Failed to create $($user.UserPrincipalName)"
+            #Write-Warning $_.Exception.Message
         }
-
+        # if a new user has been created, add baseline security groups based on Office and Department
         if ($newUser) { 
-            write-host "`n - User $($newUser.DisplayName) created successfully" -ForegroundColor green
+            write-host " -- User $($newUser.UserPrincipalName) created successfully" -ForegroundColor green
 
             Write-host "`n - Adding security groups" -ForegroundColor Cyan
+            
+            # gets groups assignments based on office and department values
             $groupsToAdd = Get-GroupAssignments -user $user
 
+            # adds groups
             foreach ($group in $groupsToAdd) {
-
-                write-host " -- Adding $($newUser.DisplayName) to group $($group.DisplayName)" -ForegroundColor cyan
+                write-host " -- Adding $($newUser.DisplayName) to group $($group.DisplayName)" -ForegroundColor green
                 New-MgGroupMember -GroupId $group.Id  -DirectoryObjectId $newUser.Id 
-            
             }
 
+            # appends log of users created to csv file
             write-host "`n - Adding log file entry for $($user.DisplayName)" -ForegroundColor blue
        
             $LogEntry = [PSCustomObject]@{
@@ -246,12 +310,9 @@ foreach ($user in $users) {
             }
 
             $LogEntry | Export-Csv -Path $LogFile -NoTypeInformation -Append
-       
         }
-
     }
-    
 }
 
-
+write-host "`n *** Script complete ***" -ForegroundColor green
 
