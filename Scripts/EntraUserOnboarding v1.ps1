@@ -343,16 +343,17 @@ Requires Microsoft Graph permissions:
     return $groupsToAdd
 
 }
-
-$dir = "C:\NewUsers"
-
 write-host "`n *** Starting Onboarding Script ***" -ForegroundColor green
+
+# sets directory
+$dir = "C:\NewUsers"
 
 # Check Microsoft Graph connection
 $GraphContext = Get-MgContext
 
 write-host "`n - Checking connection to Microsoft Graph" -ForegroundColor Cyan
 
+# connect to Grpah is no open session
 if (-not $GraphContext) {
     Write-Host " -- Connecting to Microsoft Graph with User write permissions" -ForegroundColor Yellow
 
@@ -364,9 +365,8 @@ else {
     Write-Host " -- Existing Microsoft Graph session found for $($GraphContext.Account)" -ForegroundColor Green
 }
 
-write-host "`n - Checking input and log file" -ForegroundColor Cyan
-
 # checks import files
+write-host "`n - Checking input and log file" -ForegroundColor Cyan
 $importFile = Get-ChildItem -Path "$dir\Import" -Filter *.csv 
 If ($importFile.count -gt 1) { write-warning " -- More than one file in the Import folder - Please ensure only one file is present and try again" ; exit }
 
@@ -374,12 +374,8 @@ If ($importFile.count -gt 1) { write-warning " -- More than one file in the Impo
 if (Confirm-Headers -file $dir\import\$importFile) { Write-host " -- Checked headers of input file - All OK" -ForegroundColor green }
 # import users
 $users = Import-Csv $dir\import\$importFile | Select-Object -first 15
-
 # validate contents
-
 if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green } else { exit }
-
-
 
 write-host " -- $(($users | measure-object).count) users found in the input file" -ForegroundColor green
 
@@ -399,8 +395,7 @@ if (!(test-path $logFile)) { write-warning ' -- No log file found - Please ensur
 
 read-host "`nRun onboarding script? any key to continue"
 
-
-# main execution
+# main execution - runs through all rows in input file
 $i = 0
 foreach ($user in $users) {
 
