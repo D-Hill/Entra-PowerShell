@@ -1,5 +1,100 @@
+<#
+.SYNOPSIS
+Automates Microsoft Entra ID user onboarding.
 
+.DESCRIPTION
+This script provisions new Microsoft Entra ID users from a CSV input file.
+
+The script performs the following tasks:
+
+- Validates Microsoft Graph connectivity and required permissions
+- Validates CSV input file structure and user data
+- Checks whether users already exist in the tenant
+- Creates new Entra ID users using Microsoft Graph PowerShell
+- Assigns users to security groups based on attributes such as:
+    - Office location
+    - Department
+    - Job title
+- Creates an audit log entry for each successfully provisioned user
+
+.INPUTS
+CSV file containing user provisioning data.
+
+Required CSV fields:
+- DisplayName
+- GivenName
+- Surname
+- UserPrincipalName
+- JobTitle
+- Department
+- Office
+- Password
+
+.OUTPUTS
+CSV audit log containing:
+
+- Created user details
+- Groups assigned
+- Account that executed the script
+- Creation timestamp
+- Provisioning status
+
+.REQUIREMENTS
+Microsoft Graph PowerShell SDK
+
+Required Microsoft Graph permissions:
+
+- User.ReadWrite.All
+- Group.ReadWrite.All
+
+.EXAMPLE
+.\Invoke-EntraUserOnboarding.ps1
+
+Runs the onboarding process using the CSV file located in the configured import directory.
+
+.NOTES
+Author: D-Hill
+Version: 1.0
+
+This script is intended for automating user lifecycle onboarding
+within Microsoft Entra ID environments.
+
+#>
 function New-User {
+
+
+    <#
+.SYNOPSIS
+Creates a new Microsoft Entra ID user.
+
+.DESCRIPTION
+Creates a new user account in Microsoft Entra ID using Microsoft Graph PowerShell.
+Optional attributes such as department, job title and office location can be supplied.
+
+.PARAMETER DisplayName
+Display name of the new user.
+
+.PARAMETER UserPrincipalName
+User Principal Name (UPN) for the new user.
+
+.PARAMETER MailNickname
+Mail nickname/alias for the user.
+
+.PARAMETER GroupIds
+Optional array of Entra group IDs to assign.
+
+.EXAMPLE
+New-User @NewUserParams
+
+Creates a new Entra ID user using supplied parameters.
+
+.NOTES
+Requires Microsoft Graph permissions:
+- User.ReadWrite.All
+
+#>
+
+
     [CmdletBinding(SupportsShouldProcess)]
     param (
         [Parameter(Mandatory)]
@@ -56,7 +151,27 @@ function New-User {
 }
 
 function Confirm-Headers {
+    <#
+.SYNOPSIS
+Validates CSV file headers.
 
+.DESCRIPTION
+Checks that the input CSV contains all expected headers required by the
+user provisioning process. Also identifies unexpected headers that are not
+configured for use by the script.
+
+.PARAMETER File
+Path to the CSV input file.
+
+.EXAMPLE
+Confirm-Headers -File ".\Users.csv"
+
+Validates the structure of the input CSV file.
+
+.NOTES
+Used as a pre-validation step before user provisioning begins.
+
+#>
     param (
         [Parameter(Mandatory)]
         [string]$file
@@ -95,7 +210,28 @@ function Confirm-Headers {
     $headersValidated
 }
 function Confirm-CsvEntries {
+    <#
+.SYNOPSIS
+Validates CSV user data.
 
+.DESCRIPTION
+Checks that mandatory fields contain values and validates that User Principal
+Names are in the correct format before attempting user creation.
+
+.PARAMETER File
+Path to the CSV input file.
+
+.EXAMPLE
+Confirm-CsvEntries -File ".\Users.csv"
+
+Validates user records before provisioning.
+
+.NOTES
+Returns:
+$true  - Validation successful
+$false - Validation failed
+
+#>
     param (
         [Parameter(Mandatory)]
         [string]$File
@@ -154,7 +290,30 @@ function Confirm-CsvEntries {
 }
 function Get-GroupAssignments {
 
+    <#
+.SYNOPSIS
+Determines Entra ID groups for a user.
 
+.DESCRIPTION
+Returns a collection of Microsoft Entra ID groups that a user should be
+assigned to based on their office location, department and job title.
+
+The function evaluates user attributes and retrieves matching groups from
+Microsoft Graph.
+
+.PARAMETER User
+User object containing attributes used for group assignment.
+
+.EXAMPLE
+$Groups = Get-GroupAssignments -User $User
+
+Returns groups applicable to the user.
+
+.NOTES
+Requires Microsoft Graph permissions:
+- Group.ReadWrite.All
+
+#>
     param (
         [Parameter(Mandatory)]
         [object]$user
