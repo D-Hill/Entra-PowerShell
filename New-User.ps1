@@ -5,31 +5,19 @@ function New-User {
     param (
         [Parameter(Mandatory)]
         [string]$DisplayName,
-
         [Parameter(Mandatory)]
         [string]$UserPrincipalName,
-
         [Parameter(Mandatory)]
         [string]$MailNickname,
-
         [string]$GivenName,
-
         [string]$Surname,
-
         [string]$Password,
-
         [bool]$ForceChangePasswordNextSignIn = $true,
-
         [bool]$AccountEnabled = $true,
-
         [string]$UsageLocation = "GB",
-
         [string]$Department,
-
         [string]$JobTitle,
-
         [string]$Office,
-
         [string[]]$GroupIds
     )
 
@@ -38,8 +26,6 @@ function New-User {
     }
 
     process {
-        # TODO: generate password if not supplied
-
         $passwordProfile = @{
             Password                      = $Password
             ForceChangePasswordNextSignIn = $ForceChangePasswordNextSignIn
@@ -62,10 +48,6 @@ function New-User {
 
         if ($PSCmdlet.ShouldProcess($UserPrincipalName, "Create new Entra ID user")) {
              New-MgUser @userParams
-
-            # TODO: optionally add to groups via $GroupIds (New-MgGroupMember)
-
-            # TODO: output created user object
         }
     }
 
@@ -73,4 +55,16 @@ function New-User {
     }
 }
 
-New-User -DisplayName 'Aidan Whitfield' -GivenName 'Aidan' -Surname 'Whitfield' -MailNickname 'aidan.whitfield' -JobTitle 'Chief Executive Officer' -Password 'ChangeMe1!' -UserPrincipalName 'aidan.whitfield@duncanjameshillgmailcom.onmicrosoft.com' -Office 'London' -ForceChangePasswordNextSignIn $true #-WhatIf
+$NewUserParams = @{
+    DisplayName                  = 'Aidan Whitfield'
+    GivenName                    = 'Aidan'
+    Surname                      = 'Whitfield'
+    MailNickname                 = 'aidan.whitfield'
+    JobTitle                     = 'Chief Executive Officer'
+    Password                     = 'ChangeMe1!'
+    UserPrincipalName            = 'aidan.whitfield@duncanjameshillgmailcom.onmicrosoft.com'
+    Office                       = 'London'
+    ForceChangePasswordNextSignIn = $true
+}
+
+New-User @NewUserParams
