@@ -72,11 +72,13 @@ else {
 if (-not $users) {
     $users = Get-MgUser -All -Property Id, DisplayName, UserPrincipalName, Manager, OfficeLocation, Department, Jobtitle
 }
+# create hash table
 $userHashtable = @{}
 
 foreach ($user in $users) {
     $userHashtable[$user.UserPrincipalName] = $user
 }
+# get all users with direct reports
 $managersAndReports = $users |  Where-Object { Get-MgUserDirectReport -UserId $_.Id -ErrorAction SilentlyContinue } | 
 ForEach-Object {
     $mgr = $_

@@ -332,19 +332,19 @@ Requires Microsoft Graph permissions:
     $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-All Users' })
 
     # Offices
-    If ($user.office -like 'London') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq  'SG-London Office' }) }
-    If ($user.office -like 'Manchester') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName  -eq 'SG-Manchester Office'}) }
+    If ($user.office -like 'London') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-London Office' }) }
+    If ($user.office -like 'Manchester') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Manchester Office' }) }
     If ($user.office -like 'Edinburgh') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Edinburgh Office' }) }
     If ($user.office -like 'Birmingham') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Birmingham Office' }) }
 
     # Departments
-    If ($user.Department -like 'Finance') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq  'SG-Finance' }) }
-    If ($user.Department -like 'Information Technology') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName  -eq 'SG-Information Technology' }) }
-    If ($user.Department -like 'HR') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Human Resources' }) }
+    If ($user.Department -like 'Finance') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Finance' }) }
+    If ($user.Department -like 'Information Technology') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Information Technology' }) }
+    If ($user.Department -like 'HR') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Human Resources' }) }
     If ($user.Department -like 'Executive') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Executive' }) }
 
     # titles
-    If ($user.jobtitle -like 'IT Support Analyst') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'IT Support Hub'}) }
+    If ($user.jobtitle -like 'IT Support Analyst') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'IT Support Hub' }) }
 
     return $groupsToAdd
 
@@ -382,7 +382,7 @@ If ($importFile.count -gt 1) { write-warning " -- More than one file in the Impo
 # validate headers
 if (Confirm-Headers -file $dir\import\$importFile) { Write-host " -- Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | Select-Object -first 18
+$users = Import-Csv $dir\import\$importFile # | Select-Object -first 18
 # validate contents
 if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green } else { exit }
 
@@ -439,8 +439,7 @@ foreach ($user in $users) {
        
             }
             # calls New-User function
-            #    $newUser = $null
-       $newUser =     New-EntraUser @NewUserParams -ErrorAction Stop 
+            $newUser = New-EntraUser @NewUserParams -ErrorAction Stop 
           
         }
         catch {
@@ -449,12 +448,13 @@ foreach ($user in $users) {
         }
         # if a new user has been created, add baseline security groups based on Office and Department
 
-   #     $newUser = Get-Mguser -UserId $user.UserPrincipalName
+        #     $newUser = Get-Mguser -UserId $user.UserPrincipalName
         if ($newUser) { 
             write-host " -- User $($newUser.UserPrincipalName) created successfully" -ForegroundColor green
 
             write-host "`n - Setting Manager" -ForegroundColor Cyan
 
+            if ($User.ManagerUserPrincipalName){
             $manager = $null
             $manager = Get-Mguser -UserId $User.ManagerUserPrincipalName -ErrorAction SilentlyContinue
             if ($manager) {
@@ -468,7 +468,7 @@ foreach ($user in $users) {
             else {
                 write-host " - Manager not found for this user. Manager has not been set. Please investigate."
             }
-
+        }else {write-host " - Manager not found for this user. Manager has not been set. Please investigate."}
             Write-host "`n - Adding security groups" -ForegroundColor Cyan
             
             # gets groups assignments based on office and department values
