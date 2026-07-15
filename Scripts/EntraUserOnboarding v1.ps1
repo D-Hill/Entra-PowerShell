@@ -60,7 +60,7 @@ This script is intended for automating user lifecycle onboarding
 within Microsoft Entra ID environments.
 
 #>
-function New-User {
+function New-EntraUser {
 
 
     <#
@@ -142,7 +142,13 @@ Requires Microsoft Graph permissions:
         if ($Office) { $userParams.OfficeLocation = $Office }
 
         if ($PSCmdlet.ShouldProcess($UserPrincipalName, "Create new Entra ID user")) {
-            New-MgUser @userParams
+            try {
+                return New-MgUser @userParams -ErrorAction Stop
+            }
+            catch {
+                throw "Failed to create '$UserPrincipalName'. $($_.Exception.Message)"
+            }
+
         }
     }
 
@@ -316,29 +322,29 @@ Requires Microsoft Graph permissions:
 #>
     param (
         [Parameter(Mandatory)]
-        [object]$user
+        [object]$user,
+        [object]$AllGroups
     )
 
     $groupsToAdd = @()
 
     # All Users
-    $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-All Users'"
+    $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-All Users' })
 
     # Offices
-    If ($user.office -like 'London') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-London Office'" }
-    If ($user.office -like 'Manchester') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Manchester Office'" }
-    If ($user.office -like 'Edinburgh') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Edinburgh Office'" }
-    If ($user.office -like 'Birmingham') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Birmingham Office'" }
+    If ($user.office -like 'London') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq  'SG-London Office' }) }
+    If ($user.office -like 'Manchester') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName  -eq 'SG-Manchester Office'}) }
+    If ($user.office -like 'Edinburgh') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Edinburgh Office' }) }
+    If ($user.office -like 'Birmingham') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Birmingham Office' }) }
 
     # Departments
-    If ($user.Department -like 'Finance') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Finance'" }
-    If ($user.Department -like 'Information Technology') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Information Technology'" }
-    If ($user.Department -like 'HR') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Human Resources'" }
-    If ($user.Department -like 'Executive') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'SG-Executive'" }
+    If ($user.Department -like 'Finance') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq  'SG-Finance' }) }
+    If ($user.Department -like 'Information Technology') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName  -eq 'SG-Information Technology' }) }
+    If ($user.Department -like 'HR') {  $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Human Resources' }) }
+    If ($user.Department -like 'Executive') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'SG-Executive' }) }
 
     # titles
-    If ($user.jobtitle -like 'IT Support Analyst') { $groupsToAdd += Get-MgGroup -Filter "displayname eq 'IT Support Hub'" }
-
+    If ($user.jobtitle -like 'IT Support Analyst') { $groupsToAdd += $AllGroups.Where({ $_.DisplayName -eq 'IT Support Hub'}) }
 
     return $groupsToAdd
 
@@ -365,6 +371,9 @@ else {
     Write-Host " -- Existing Microsoft Graph session found for $($GraphContext.Account)" -ForegroundColor Green
 }
 
+# get all Entra Groups
+$allGroups = Get-MgGroup -All
+
 # checks import files
 write-host "`n - Checking input and log file" -ForegroundColor Cyan
 $importFile = Get-ChildItem -Path "$dir\Import" -Filter *.csv 
@@ -373,7 +382,7 @@ If ($importFile.count -gt 1) { write-warning " -- More than one file in the Impo
 # validate headers
 if (Confirm-Headers -file $dir\import\$importFile) { Write-host " -- Checked headers of input file - All OK" -ForegroundColor green }
 # import users
-$users = Import-Csv $dir\import\$importFile | Select-Object -first 15
+$users = Import-Csv $dir\import\$importFile | Select-Object -first 18
 # validate contents
 if (Confirm-CSVEntries -file $dir\import\$importFile) { Write-host " -- Checked contents of input file - All appears OK" -ForegroundColor green } else { exit }
 
@@ -412,7 +421,7 @@ foreach ($user in $users) {
     # if no user exists with that UPN create user
     if (-not $existingUser) {
 
-        write-host " - Creating new user $($user.UserPrincipalName)" -ForegroundColor yello
+        write-host " - Creating new user $($user.UserPrincipalName)" -ForegroundColor yellow
         try {
             $mailNickname = $null
             $mailNickname = $user.UserPrincipalName.Split("@")[0]
@@ -427,23 +436,43 @@ foreach ($user in $users) {
                 Department        = $user.Department
                 JobTitle          = $user.JobTitle
                 Office            = $user.Office
+       
             }
             # calls New-User function
-            $newUser = $null
-            $newUser = New-User @NewUserParams -ErrorAction Stop 
+            #    $newUser = $null
+       $newUser =     New-EntraUser @NewUserParams -ErrorAction Stop 
+          
         }
         catch {
             Write-Warning " - Failed to create $($user.UserPrincipalName)"
             #Write-Warning $_.Exception.Message
         }
         # if a new user has been created, add baseline security groups based on Office and Department
+
+   #     $newUser = Get-Mguser -UserId $user.UserPrincipalName
         if ($newUser) { 
             write-host " -- User $($newUser.UserPrincipalName) created successfully" -ForegroundColor green
+
+            write-host "`n - Setting Manager" -ForegroundColor Cyan
+
+            $manager = $null
+            $manager = Get-Mguser -UserId $User.ManagerUserPrincipalName -ErrorAction SilentlyContinue
+            if ($manager) {
+                $managerID = $manager.Id
+                $NewManager = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/users/$managerId"
+                }
+                Set-MgUserManagerByRef -UserId $newUser.id -BodyParameter $Newmanager -ErrorAction SilentlyContinue
+                write-host " - Manager set to be $($manager.DisplayName) for this user" -ForegroundColor green
+            }
+            else {
+                write-host " - Manager not found for this user. Manager has not been set. Please investigate."
+            }
 
             Write-host "`n - Adding security groups" -ForegroundColor Cyan
             
             # gets groups assignments based on office and department values
-            $groupsToAdd = Get-GroupAssignments -user $user
+            $groupsToAdd = Get-GroupAssignments -user $user -AllGroups $allGroups
 
             # adds groups
             foreach ($group in $groupsToAdd) {
@@ -474,4 +503,3 @@ foreach ($user in $users) {
 }
 
 write-host "`n *** Script complete ***" -ForegroundColor green
-
