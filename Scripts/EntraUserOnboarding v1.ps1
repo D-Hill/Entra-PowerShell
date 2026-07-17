@@ -448,27 +448,27 @@ foreach ($user in $users) {
         }
         # if a new user has been created, add baseline security groups based on Office and Department
 
-        #     $newUser = Get-Mguser -UserId $user.UserPrincipalName
         if ($newUser) { 
             write-host " -- User $($newUser.UserPrincipalName) created successfully" -ForegroundColor green
 
             write-host "`n - Setting Manager" -ForegroundColor Cyan
 
-            if ($User.ManagerUserPrincipalName){
-            $manager = $null
-            $manager = Get-Mguser -UserId $User.ManagerUserPrincipalName -ErrorAction SilentlyContinue
-            if ($manager) {
-                $managerID = $manager.Id
-                $NewManager = @{
-                    "@odata.id" = "https://graph.microsoft.com/v1.0/users/$managerId"
+            if ($User.ManagerUserPrincipalName) {
+                $manager = $null
+                $manager = Get-Mguser -UserId $User.ManagerUserPrincipalName -ErrorAction SilentlyContinue
+                if ($manager) {
+                    $managerID = $manager.Id
+                    $NewManager = @{
+                        "@odata.id" = "https://graph.microsoft.com/v1.0/users/$managerId"
+                    }
+                    Set-MgUserManagerByRef -UserId $newUser.id -BodyParameter $Newmanager -ErrorAction SilentlyContinue
+                    write-host " - Manager set to be $($manager.DisplayName) for this user" -ForegroundColor green
                 }
-                Set-MgUserManagerByRef -UserId $newUser.id -BodyParameter $Newmanager -ErrorAction SilentlyContinue
-                write-host " - Manager set to be $($manager.DisplayName) for this user" -ForegroundColor green
+                else {
+                    write-host " - Manager not found for this user. Manager has not been set. Please investigate."
+                }
             }
-            else {
-                write-host " - Manager not found for this user. Manager has not been set. Please investigate."
-            }
-        }else {write-host " - Manager not found for this user. Manager has not been set. Please investigate."}
+            else { write-host " - Manager not found for this user. Manager has not been set. Please investigate." }
             Write-host "`n - Adding security groups" -ForegroundColor Cyan
             
             # gets groups assignments based on office and department values

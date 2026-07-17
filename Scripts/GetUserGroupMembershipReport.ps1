@@ -37,9 +37,9 @@ function Get-UserGroupMemberships {
     begin { }
     process {
 
-        Get-MgUserMemberOf -UserId $UPN |
+   $groups =       Get-MgUserMemberOf -UserId $UPN -All |     Where-Object { $_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.group' } |
 
-        ForEach-Object {
+       ForEach-Object {
             $group = Get-MgGroup -GroupId $_.Id
             [PSCustomObject]@{
                 DisplayName = $group.DisplayName
@@ -51,34 +51,38 @@ function Get-UserGroupMemberships {
             }
         }
     }
-    end { return $groups }
+    end { return $groups | Where-Object {$_.displayname} | Sort-Object DisplayName }
 }
 
-import-module ImportExcel
+# import the importExcel module
+try { import-module ImportExcel } catch { write-warning "please instal the Importexcel PowerShell module and rerun script" ; exit}
 
+# sets repoprt directory
 $dir = 'C:\UserReports'
 
+write-host "`n*** Starting User Access Report Script ***" -ForegroundColor Cyan
 # connect to Grpah is no open session
-if (-not $GraphContext) {
-    Write-Host " -- Connecting to Microsoft Graph with User write permissions" -ForegroundColor Yellow
 
+if (-not (Get-MgContext)) {
+    Write-Host "`n - Connecting to Microsoft Graph with Read permissions"
     # connects to graph and discards message for console readability
-    $graphConnectionMessage = Connect-MgGraph -Scopes "User.ReadWrite.All", "Group.ReadWrite.All" 
-    if ( Get-MgContext ) { Write-Host " --- Connection to Microsoft Graph successful" -ForegroundColor Green } else { Write-warning " --- Connection to Microsoft Graph failed" ; exit }
+    $null = Connect-MgGraph -Scopes "User.Read.All", "Group.Read.All" 
+    if ( Get-MgContext ) { Write-Host " --- Connection to Microsoft Graph with Read permissions successful" -ForegroundColor Green } else { Write-warning " --- Connection to Microsoft Graph failed" ; exit }
 }
 else {
-    Write-Host " -- Existing Microsoft Graph session found for $($GraphContext.Account)" -ForegroundColor Green
+    Write-Host "`n - Existing Microsoft Graph session found for $($GraphContext.Account)" -ForegroundColor Cyan
 }
 if (-not $users) {
     $users = Get-MgUser -All -Property Id, DisplayName, UserPrincipalName, Manager, OfficeLocation, Department, Jobtitle
 }
 # create hash table
+write-host "`n - Getting user information" -ForegroundColor Cyan 
 $userHashtable = @{}
-
 foreach ($user in $users) {
     $userHashtable[$user.UserPrincipalName] = $user
 }
 # get all users with direct reports
+write-host " - Getting managers and reports" -ForegroundColor Cyan 
 $managersAndReports = $users |  Where-Object { Get-MgUserDirectReport -UserId $_.Id -ErrorAction SilentlyContinue } | 
 ForEach-Object {
     $mgr = $_
@@ -99,20 +103,23 @@ ForEach-Object {
 $managerList = $managersAndReports.ManagerUPN | Select-Object -Unique 
 $managers = foreach ($managerUPN in $managerList) { $userHashtable[$managerUPN] }
 
-# Loop through each manager
+# Loop through each manager creating reports
 foreach ($manager in $managers) {
 
     # Get all direct reports for this manager
-    $mgrReports = $managersAndReports | Where-Object { $managersAndReports.ManagerUPN -like $manager.UserPrincipalName }
+    $mgrReports = $null
+    $mgrReports = $managersAndReports | Where-Object { $_.ManagerUPN -like $manager.UserPrincipalName } | Sort-Object DirectReportUPN
 
+    $mgrReportsCount = $($mgrReports | Measure-Object).count
     # Define the Excel file path using manager's display name
-    $excelPath = "$dir\$($manager.DisplayName)_Direct Report Access Report.xlsx"
+    $excelPath = "$dir\$($manager.DisplayName)_Team Access Report.xlsx"
 
     # Create summary sheet with manager info and report generation date
     $initialData = [PSCustomObject]@{
         Manager            = $manager.DisplayName
         ManagerUPN         = $manager.UserPrincipalName
-        "Report Generated" = Get-Date -Format 'yyyy-MM-dd HH:mm'
+        "Report Generated" = Get-Date -Format dd-MM-yyyy-HH:mm
+        'Number of Reports' =  $mgrReportsCount
     }
 
     $initialData | Export-Excel -Path $excelPath -WorksheetName "Summary" -AutoSize
@@ -131,7 +138,7 @@ foreach ($manager in $managers) {
 
         # Open the Excel package to add data validation and conditional formatting
         $pkg = Open-ExcelPackage -Path $excelPath
-        $ws = $pkg.Workbook.Worksheets[$report.DisplayName]
+        $ws = $pkg.Workbook.Worksheets[$worksheetName]
         
         # Add dropdown validation in column D for Approve/Reject
         Add-ExcelDataValidationRule -Worksheet $ws -Range "D:D" -ValidationType List -Formula '"Approve,Reject"'
@@ -147,5 +154,5 @@ foreach ($manager in $managers) {
         # Save and close the Excel package
         Close-ExcelPackage $pkg
     }
-
+write-host " - Created report for Manager $($manager.DisplayName) - $($mgrReportsCount) reports" -ForegroundColor Green
 }
