@@ -1,3 +1,42 @@
+
+
+<#
+.SYNOPSIS
+Generates Microsoft Entra ID group membership reports for managers and their direct reports.
+
+.DESCRIPTION
+Retrieves user hierarchy information from Microsoft Entra ID, identifies managers and
+their direct reports, and creates Excel-based access review reports containing direct
+group memberships for each user.
+
+The reports include group name, group type, description, and an approval decision field
+to support periodic access reviews and entitlement validation.
+
+The script uses Microsoft Graph PowerShell to retrieve identity and group membership
+information and ImportExcel to generate formatted Excel reports.
+
+.REQUIREMENTS
+- Microsoft Graph PowerShell module
+- ImportExcel PowerShell module
+- Microsoft Graph permissions:
+    - User.Read.All
+    - Group.Read.All
+
+.OUTPUTS
+Creates an Excel workbook per manager containing:
+- Summary information
+- Individual worksheets for each direct report
+- Group membership review data
+- Approve/Reject decision tracking
+
+.NOTES
+Author: 
+Created:
+Version: 1.0
+
+#>
+
+
 function Get-UserGroupMemberships {
     <#
     .SYNOPSIS
